@@ -1,0 +1,11 @@
+domains = [
+    "github.com",
+    "api.github.com",
+    "raw.githubusercontent.com",
+    "assets-cdn.github.com",
+]
+scan_interval = 1800
+scan_concurrency = 50
+upstream_dns = "223.5.5.5:53"
+listen_addr = "127.0.0.1:53535"
+log_level = "info"

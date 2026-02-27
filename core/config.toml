@@ -1,0 +1,24 @@
+# TurboGitHub Configuration File
+
+# List of domains to accelerate
+domains = [
+    "github.com",
+    "api.github.com", 
+    "raw.githubusercontent.com",
+    "assets-cdn.github.com"
+]
+
+# IP scan interval in seconds (30 minutes)
+scan_interval = 1800
+
+# Maximum concurrent connections for scanning
+scan_concurrency = 50
+
+# Upstream DNS server to use for non-accelerated domains
+upstream_dns = "223.5.5.5:53"
+
+# DNS server listen address (use high port for testing without admin privileges)
+listen_addr = "127.0.0.1:15353"
+
+# Log level (debug, info, warn, error)
+log_level = "info"

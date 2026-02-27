@@ -1,0 +1,30 @@
+[package]
+name = "turbogithub-gui"
+version = "0.0.1"
+edition = "2021"
+
+[profile.release]
+opt-level = "z"      # 最小化优化
+lto = true           # 链接时优化
+codegen-units = 1    # 减少代码生成单元
+panic = "abort"      # 使用 abort 而不是 unwind
+strip = true         # 剥离调试符号
+
+[profile.dev]
+opt-level = 0        # 开发模式不优化
+
+[dependencies]
+eframe = { version = "0.33", features = ["persistence"] }
+egui = "0.33"
+egui_extras = "0.33"
+tokio = { version = "1", features = ["full", "rt-multi-thread"] }
+tokio-tungstenite = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+futures-util = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+ico = "0.2"
+png = "0.17"
+resvg = "0.39"
+usvg = "0.39"
