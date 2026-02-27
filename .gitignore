@@ -1,0 +1,36 @@
+# Rust编译文件
+target/
+**/*.rs.bk
+
+# 发布目录
+release/
+
+# 依赖文件
+Cargo.lock
+
+# 日志文件
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 构建产物
+*.exe
+*.dll
+*.pdb
+*.lib
+
+# 备份文件
+*.bak
+*.backup

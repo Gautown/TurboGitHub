@@ -1,0 +1,38 @@
+# TurboGitHub 发布配置
+[release]
+# 应用程序名称
+name = "TurboGitHub"
+# 版本号
+version = "1.0.0"
+# 描述
+description = "GitHub加速工具 - DNS优化和流量监控"
+
+# 构建配置
+[build]
+# 目标平台
+target = "x86_64-pc-windows-msvc"
+# 优化级别
+opt-level = "z"
+# 链接时优化
+lto = true
+# 剥离调试符号
+strip = true
+# 代码生成单元
+codegen-units = 1
+# 恐慌处理
+panic = "abort"
+
+# 文件包含配置
+[files]
+# 包含的配置文件
+config_files = ["config.toml"]
+# 包含的资源文件
+assets = ["assets/icons/logo.svg", "assets/icons/logo.png", "assets/icons/logo.ico"]
+# 排除的文件
+exclude = ["target/", ".git/", "*.log"]
+
+# 发布信息
+[info]
+author = "GauTon"
+repository = "https://github.com/Gautown/TurboGitHub"
+license = "MIT"
