@@ -56,7 +56,7 @@ copy "assets\icons\logo.svg" "release\assets\icons\"
 copy "assets\icons\logo.png" "release\assets\icons\"
 copy "assets\icons\logo.ico" "release\assets\icons\"
 
-REM 创建启动脚本
+REM 创建启动脚本（无控制台窗口）
 echo @echo off > "release\启动TurboGitHub.bat"
 echo echo 正在启动 TurboGitHub... >> "release\启动TurboGitHub.bat"
 echo echo ======================================== >> "release\启动TurboGitHub.bat"
@@ -64,10 +64,14 @@ echo echo GitHub加速工具 - DNS优化和流量监控 >> "release\启动TurboG
 echo echo 版本 1.0.0 >> "release\启动TurboGitHub.bat"
 echo echo ======================================== >> "release\启动TurboGitHub.bat"
 echo echo. >> "release\启动TurboGitHub.bat"
-echo echo 注意：请确保先启动守护进程（如果需要DNS功能） >> "release\启动TurboGitHub.bat"
+echo echo 注意：GUI窗口将直接打开，不会显示控制台窗口 >> "release\启动TurboGitHub.bat"
 echo echo. >> "release\启动TurboGitHub.bat"
 echo timeout /t 2 /nobreak >nul >> "release\启动TurboGitHub.bat"
-echo TurboGitHub.exe >> "release\启动TurboGitHub.bat"
+echo start "" "TurboGitHub.exe" >> "release\启动TurboGitHub.bat"
+
+REM 创建无控制台窗口启动脚本
+echo Set WshShell = CreateObject("WScript.Shell") > "release\启动TurboGitHub.vbs"
+echo WshShell.Run "TurboGitHub.exe", 0, False >> "release\启动TurboGitHub.vbs"
 
 REM 创建守护进程启动脚本
 echo @echo off > "release\启动守护进程.bat"

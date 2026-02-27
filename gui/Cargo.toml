@@ -3,6 +3,10 @@ name = "turbogithub-gui"
 version = "0.0.1"
 edition = "2021"
 
+# Windows GUI应用程序配置（无控制台窗口）
+[package.metadata.windows_subsystem]
+console = false
+
 [profile.release]
 opt-level = "z"      # 最小化优化
 lto = true           # 链接时优化
