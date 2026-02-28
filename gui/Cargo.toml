@@ -3,9 +3,35 @@ name = "turbogithub-gui"
 version = "0.0.1"
 edition = "2021"
 
-# Windows GUI应用程序配置（无控制台窗口）
-[package.metadata.windows_subsystem]
-console = false
+# 打包配置
+[package.metadata.bundle]
+name = "TurboGitHub"
+identifier = "com.gautown.turbogithub"
+version = "0.0.1"
+authors = ["Gautown"]
+description = "GitHub网络优化加速工具"
+license = "MIT"
+repository = "https://github.com/Gautown/TurboGitHub"
+
+# Windows特定配置
+[package.metadata.bundle.windows]
+targets = ["x86_64-pc-windows-msvc"]
+icon = ["../../assets/icons/logo.ico"]
+resources = ["../../assets/icons/"]
+installer = "msi"
+
+# Linux特定配置
+[package.metadata.bundle.linux]
+targets = ["x86_64-unknown-linux-gnu"]
+icon = ["../assets/icons/logo.png"]
+resources = ["../assets/icons/"]
+
+# macOS特定配置
+[package.metadata.bundle.macos]
+targets = ["x86_64-apple-darwin"]
+icon = ["../assets/icons/logo.icns"]
+resources = ["../assets/icons/"]
+category = "public.app-category.developer-tools"
 
 [profile.release]
 opt-level = "z"      # 最小化优化
@@ -18,17 +44,14 @@ strip = true         # 剥离调试符号
 opt-level = 0        # 开发模式不优化
 
 [dependencies]
-eframe = { version = "0.33", features = ["persistence"] }
+eframe = { version = "0.33", features = [] }  # 移除persistence特性
 egui = "0.33"
-egui_extras = "0.33"
-tokio = { version = "1", features = ["full", "rt-multi-thread"] }
-tokio-tungstenite = "0.21"
+egui_extras = "0.33"  # 添加必要的依赖
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }  # 添加必要的特性
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-anyhow = "1"
-futures-util = "0.3"
-chrono = { version = "0.4", features = ["serde"] }
-ico = "0.2"
-png = "0.17"
-resvg = "0.39"
-usvg = "0.39"
+chrono = { version = "0.4", features = ["serde"] }  # 添加必要的依赖
+ico = "0.2"  # 重新添加ICO图标处理依赖
+rand = "0.8"
+tray-item = "0.10"
+system-tray = "0.3"

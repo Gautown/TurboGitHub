@@ -1,4 +1,4 @@
-use crate::daemon_client::{DaemonClient, ServiceStatus};
+use crate::integrated_service::{IntegratedService, ServiceStatus};
 use crate::traffic_monitor::{TrafficMonitor, draw_traffic_chart};
 use eframe::egui;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 pub struct TurboGitHubApp {
     rt: Runtime,
-    client: Arc<DaemonClient>,
+    service: Arc<IntegratedService>,
     status: Arc<Mutex<Option<ServiceStatus>>>,
     logs: Arc<Mutex<Vec<String>>>,
     traffic_monitor: TrafficMonitor,
@@ -20,25 +20,28 @@ pub struct TurboGitHubApp {
 
 impl TurboGitHubApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let rt = Runtime::new().unwrap();
-        let client = Arc::new(DaemonClient::new());
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let service = Arc::new(IntegratedService::new());
         let status = Arc::new(Mutex::new(None));
         let logs = Arc::new(Mutex::new(Vec::new()));
         let traffic_monitor = TrafficMonitor::new(100); // 保存最近 100 个数据点
         let app_start_time = SystemTime::now(); // 记录应用启动时间
         
         // 启动后台任务
-        let client_clone = Arc::clone(&client);
+        let service_clone = Arc::clone(&service);
         let status_clone = Arc::clone(&status);
         let logs_clone = Arc::clone(&logs);
         
         rt.spawn(async move {
-            Self::background_task(client_clone, status_clone, logs_clone).await;
+            Self::background_task(service_clone, status_clone, logs_clone).await;
         });
         
         Self {
             rt,
-            client,
+            service,
             status,
             logs,
             traffic_monitor,
@@ -50,32 +53,32 @@ impl TurboGitHubApp {
     }
     
     async fn background_task(
-        client: Arc<DaemonClient>,
+        service: Arc<IntegratedService>,
         status: Arc<Mutex<Option<ServiceStatus>>>,
         logs: Arc<Mutex<Vec<String>>>,
     ) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         
+        // 启动集成化服务
+        if let Err(e) = service.start_service().await {
+            let mut logs_guard = logs.lock().await;
+            logs_guard.push(format!("启动服务失败：{}", e));
+        } else {
+            let mut logs_guard = logs.lock().await;
+            logs_guard.push("集成化服务已启动".to_string());
+        }
+        
         loop {
             interval.tick().await;
             
-            // 尝试连接
-            if !client.is_connected().await {
-                match client.connect().await {
-                    Ok(_) => {
-                        let mut logs_guard = logs.lock().await;
-                        logs_guard.push("已连接到守护进程".to_string());
-                    }
-                    Err(e) => {
-                        let mut logs_guard = logs.lock().await;
-                        logs_guard.push(format!("连接失败：{}", e));
-                        continue;
-                    }
-                }
+            // 模拟网络扫描
+            if let Err(e) = service.scan_networks().await {
+                let mut logs_guard = logs.lock().await;
+                logs_guard.push(format!("网络扫描失败：{}", e));
             }
             
             // 获取状态
-            match client.get_status().await {
+            match service.get_status().await {
                 Ok(new_status) => {
                     let mut status_guard = status.lock().await;
                     *status_guard = Some(new_status);
@@ -100,54 +103,57 @@ impl TurboGitHubApp {
     }
     
     fn start_service(&self) {
-        let client = Arc::clone(&self.client);
+        let service = Arc::clone(&self.service);
+        let logs = Arc::clone(&self.logs);
         self.add_log("启动服务...".to_string());
         
         self.rt.spawn(async move {
-            match client.start_service().await {
-                Ok(success) => {
-                    if success {
-                        // 日志会在后台任务中更新
-                    } else {
-                        // 处理失败情况
-                    }
+            match service.start_service().await {
+                Ok(()) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push("✅ 服务启动成功".to_string());
                 }
-                Err(_e) => {
-                    // 错误处理
+                Err(e) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push(format!("❌ 服务启动失败: {}", e));
                 }
             }
         });
     }
     
     fn stop_service(&self) {
-        let client = Arc::clone(&self.client);
+        let service = Arc::clone(&self.service);
+        let logs = Arc::clone(&self.logs);
         self.add_log("停止服务...".to_string());
         
         self.rt.spawn(async move {
-            match client.stop_service().await {
-                Ok(success) => {
-                    if success {
-                        // 日志会在后台任务中更新
-                    }
+            match service.stop_service().await {
+                Ok(()) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push("✅ 服务停止成功".to_string());
                 }
-                Err(_e) => {
-                    // 错误处理
+                Err(e) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push(format!("❌ 服务停止失败: {}", e));
                 }
             }
         });
     }
     
     fn scan_now(&self) {
-        let client = Arc::clone(&self.client);
+        let service = Arc::clone(&self.service);
+        let logs = Arc::clone(&self.logs);
         self.add_log("开始手动扫描...".to_string());
         
         self.rt.spawn(async move {
-            match client.scan_now().await {
-                Ok(_) => {
-                    // 扫描完成
+            match service.scan_networks().await {
+                Ok(()) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push("✅ 网络扫描完成".to_string());
                 }
-                Err(_e) => {
-                    // 错误处理
+                Err(e) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push(format!("❌ 网络扫描失败: {}", e));
                 }
             }
         });
@@ -198,7 +204,7 @@ impl eframe::App for TurboGitHubApp {
         
         // 日志显示 - 与窗体同宽
         egui::TopBottomPanel::bottom("logs_panel")
-            .min_height(130.0)
+            .min_height(110.0)
             .show(ctx, |ui| {
                 ui.heading("日志");
                 
@@ -207,8 +213,10 @@ impl eframe::App for TurboGitHubApp {
                 });
                 
                 egui::ScrollArea::vertical()
-                    .max_height(110.0)
+                    .max_height(100.0)
                     .stick_to_bottom(true)
+                    .auto_shrink([false; 2]) // 确保滚动区域不会自动收缩
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible) // 始终显示滚动条
                     .show(ui, |ui| {
                         for log in logs.iter().rev().take(20) {
                             ui.monospace(log);
@@ -315,15 +323,36 @@ impl eframe::App for TurboGitHubApp {
             ui.heading("控制面板");
             
             ui.horizontal(|ui| {
-                if ui.button("启动服务").clicked() {
+                // 启动服务按钮 - 绿色背景
+                let start_button = egui::Button::new(egui::RichText::new("▶ 启动服务")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE))
+                    .fill(egui::Color32::from_rgb(0, 210, 127))
+                    .min_size(egui::Vec2::new(90.0, 32.0));
+                
+                if ui.add(start_button).clicked() {
                     self.start_service();
                 }
                 
-                if ui.button("停止服务").clicked() {
+                // 停止服务按钮 - 红色背景
+                let stop_button = egui::Button::new(egui::RichText::new("● 停止服务")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE))
+                    .fill(egui::Color32::from_rgb(250, 15, 70))
+                    .min_size(egui::Vec2::new(90.0, 32.0));
+                
+                if ui.add(stop_button).clicked() {
                     self.stop_service();
                 }
                 
-                if ui.button("立即扫描").clicked() {
+                // 立即扫描按钮 - 蓝色背景
+                let scan_button = egui::Button::new(egui::RichText::new("🔎 立即扫描")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE))
+                    .fill(egui::Color32::from_rgb(25, 103, 210))
+                    .min_size(egui::Vec2::new(90.0, 32.0));
+                
+                if ui.add(scan_button).clicked() {
                     self.scan_now();
                 }
                 
