@@ -16,6 +16,7 @@ Cargo.lock
 Thumbs.db
 
 # 临时文件
+.ipc_port
 *.tmp
 *.temp
 
