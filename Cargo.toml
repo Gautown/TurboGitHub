@@ -17,11 +17,24 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-opt-level = "z"      # 最小化优化
-lto = true           # 链接时优化
-codegen-units = 1    # 减少代码生成单元
+opt-level = 3        # 最大性能优化
+lto = "thin"         # 轻量级 LTO（更快）
+codegen-units = 4    # 多个代码单元（更快）
 panic = "abort"      # 使用 abort 而不是 unwind
 strip = true         # 剥离调试符号
 
 [profile.dev]
-opt-level = 0        # 开发模式不优化
+opt-level = 1        # 轻度优化，提升运行速度
+debug = 1            # 最少调试信息
+incremental = true   # 启用增量编译
+split-debuginfo = "unpacked"
+
+# 为重量级依赖启用优化
+[profile.dev.package."eframe"]
+opt-level = 2
+[profile.dev.package."egui"]
+opt-level = 2
+[profile.dev.package."image"]
+opt-level = 2
+[profile.dev.package."windows"]
+opt-level = 2
