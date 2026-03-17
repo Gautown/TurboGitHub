@@ -142,9 +142,33 @@ impl Scanner {
 
     pub async fn get_best_ip(&self, domain: &str) -> Option<Ipv4Addr> {
         let pool = self.ip_pool.lock().await;
-        pool.get(domain)
-            .and_then(|ips| ips.iter().find(|ip| ip.reachable && ip.https_available))
-            .map(|ip| ip.ip)
+        
+        if let Some(ips) = pool.get(domain) {
+            // 过滤可用的IP地址
+            let available_ips: Vec<&IpInfo> = ips.iter()
+                .filter(|ip| ip.reachable && ip.https_available)
+                .collect();
+            
+            if available_ips.is_empty() {
+                return None;
+            }
+            
+            // 选择延迟最低的IP地址
+            let best_ip = available_ips.iter()
+                .min_by(|a, b| a.rtt.cmp(&b.rtt))
+                .map(|ip| ip.ip);
+            
+            if let Some(ip) = best_ip {
+                debug!("Selected best IP {} for {} with RTT {:?}", ip, domain, ips.iter()
+                    .find(|i| i.ip == ip)
+                    .map(|i| i.rtt)
+                    .unwrap_or_default());
+            }
+            
+            best_ip
+        } else {
+            None
+        }
     }
 
     pub async fn get_ip_pool(&self) -> HashMap<String, Vec<IpInfo>> {

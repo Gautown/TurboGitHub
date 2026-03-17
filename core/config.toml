@@ -18,7 +18,7 @@ scan_concurrency = 50
 upstream_dns = "223.5.5.5:53"
 
 # DNS server listen address (use high port for testing without admin privileges)
-listen_addr = "127.0.0.1:15353"
+listen_addr = "127.0.0.1:61235"
 
 # Log level (debug, info, warn, error)
 log_level = "info"

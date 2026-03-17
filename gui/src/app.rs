@@ -5,38 +5,47 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
+use std::thread;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// 全局共享的窗口可见性标志
+pub static WINDOW_SHOULD_BE_VISIBLE: AtomicBool = AtomicBool::new(true);
 
 pub struct TurboGitHubApp {
     rt: Runtime,
     service: Arc<IntegratedService>,
     status: Arc<Mutex<Option<ServiceStatus>>>,
     logs: Arc<Mutex<Vec<String>>>,
-    traffic_monitor: TrafficMonitor,
+    traffic_monitor: Arc<Mutex<TrafficMonitor>>,
     app_start_time: SystemTime,
     auto_refresh: bool,
     last_refresh: std::time::Instant,
     window_configured: bool,
+    service_running: bool,
+    window_visible: bool,
 }
 
 impl TurboGitHubApp {
+    #[allow(dead_code)]
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-        let service = Arc::new(IntegratedService::new());
+        let service = Arc::new(IntegratedService::new("dynamic".to_string()));
         let status = Arc::new(Mutex::new(None));
         let logs = Arc::new(Mutex::new(Vec::new()));
-        let traffic_monitor = TrafficMonitor::new(100); // 保存最近 100 个数据点
+        let traffic_monitor = Arc::new(Mutex::new(TrafficMonitor::new(100))); // 保存最近 100 个数据点
         let app_start_time = SystemTime::now(); // 记录应用启动时间
         
         // 启动后台任务
         let service_clone = Arc::clone(&service);
         let status_clone = Arc::clone(&status);
         let logs_clone = Arc::clone(&logs);
+        let traffic_monitor_clone = Arc::clone(&traffic_monitor);
         
         rt.spawn(async move {
-            Self::background_task(service_clone, status_clone, logs_clone).await;
+            Self::background_task(service_clone, status_clone, logs_clone, traffic_monitor_clone).await;
         });
         
         Self {
@@ -49,6 +58,50 @@ impl TurboGitHubApp {
             auto_refresh: true,
             last_refresh: std::time::Instant::now(),
             window_configured: false,
+            service_running: true,
+            window_visible: true,
+        }
+    }
+    
+    /// 使用外部服务实例创建应用
+    pub fn new_with_service(_cc: &eframe::CreationContext<'_>, service: Arc<IntegratedService>) -> Self {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let status = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let traffic_monitor = Arc::new(Mutex::new(TrafficMonitor::new(100))); // 保存最近 100 个数据点
+        let app_start_time = SystemTime::now(); // 记录应用启动时间
+        
+        // 使用独立的线程运行后台任务
+        let service_clone = Arc::clone(&service);
+        let status_clone = Arc::clone(&status);
+        let logs_clone = Arc::clone(&logs);
+        let traffic_monitor_clone = Arc::clone(&traffic_monitor);
+        
+        thread::spawn(move || {
+            let bg_rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            bg_rt.block_on(async move {
+                Self::background_task(service_clone, status_clone, logs_clone, traffic_monitor_clone).await;
+            });
+        });
+        
+        Self {
+            rt,
+            service,
+            status,
+            logs,
+            traffic_monitor,
+            app_start_time,
+            auto_refresh: true,
+            last_refresh: std::time::Instant::now(),
+            window_configured: false,
+            service_running: true,
+            window_visible: true,
         }
     }
     
@@ -56,8 +109,11 @@ impl TurboGitHubApp {
         service: Arc<IntegratedService>,
         status: Arc<Mutex<Option<ServiceStatus>>>,
         logs: Arc<Mutex<Vec<String>>>,
+        traffic_monitor: Arc<Mutex<TrafficMonitor>>,
     ) {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut status_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut traffic_interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        let mut traffic_count = 0usize;
         
         // 启动集成化服务
         if let Err(e) = service.start_service().await {
@@ -68,15 +124,33 @@ impl TurboGitHubApp {
             logs_guard.push("集成化服务已启动".to_string());
         }
         
-        loop {
-            interval.tick().await;
-            
-            // 模拟网络扫描
-            if let Err(e) = service.scan_networks().await {
+        // 立即获取一次流量数据
+        match service.get_realtime_traffic(100).await {
+            Ok(traffic_data) => {
                 let mut logs_guard = logs.lock().await;
-                logs_guard.push(format!("网络扫描失败：{}", e));
+                logs_guard.push("✅ 初始流量数据获取成功".to_string());
+                
+                if let Some(network_traffic) = traffic_data["network_traffic"].as_object() {
+                    if let Some(data_points) = network_traffic["data_points"].as_array() {
+                        let mut monitor = traffic_monitor.lock().await;
+                        for point in data_points {
+                            if let (Some(upload_bytes), Some(download_bytes)) = (
+                                point["total_upload"].as_u64(),
+                                point["total_download"].as_u64()
+                            ) {
+                                monitor.add_traffic(upload_bytes, download_bytes);
+                            }
+                        }
+                    }
+                }
             }
-            
+            Err(e) => {
+                let mut logs_guard = logs.lock().await;
+                logs_guard.push(format!("❌ 初始流量数据获取失败：{}", e));
+            }
+        }
+        
+        loop {
             // 获取状态
             match service.get_status().await {
                 Ok(new_status) => {
@@ -84,10 +158,67 @@ impl TurboGitHubApp {
                     *status_guard = Some(new_status);
                 }
                 Err(e) => {
+                    let mut status_guard = status.lock().await;
+                    *status_guard = None;
+                    
                     let mut logs_guard = logs.lock().await;
                     logs_guard.push(format!("获取状态失败：{}", e));
                 }
             }
+            
+            status_interval.tick().await;
+            
+            // 模拟网络扫描
+            if let Err(e) = service.scan_networks().await {
+                let mut logs_guard = logs.lock().await;
+                logs_guard.push(format!("网络扫描失败：{}", e));
+            }
+            
+            // 获取流量数据
+            traffic_count += 1;
+            match service.get_realtime_traffic(100).await {
+                Ok(traffic_data) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push(format!("✅ 第 {} 次获取流量数据成功", traffic_count));
+                    
+                    // 优先使用网络流量数据（系统级真实流量）
+                    if let Some(network_traffic) = traffic_data["network_traffic"].as_object() {
+                        if let Some(data_points) = network_traffic["data_points"].as_array() {
+                            let mut monitor = traffic_monitor.lock().await;
+                            for point in data_points {
+                                if let (Some(upload_bytes), Some(download_bytes)) = (
+                                    point["total_upload"].as_u64(),
+                                    point["total_download"].as_u64()
+                                ) {
+                                    // 使用增量数据方法（核心返回的是增量数据）
+                                    monitor.add_delta_traffic(upload_bytes, download_bytes);
+                                }
+                            }
+                        }
+                    }
+                    // 备用：使用 DNS 查询流量统计
+                    else if let Some(dns_traffic) = traffic_data["dns_traffic"].as_object() {
+                        if let Some(data_points) = dns_traffic["data_points"].as_array() {
+                            let mut monitor = traffic_monitor.lock().await;
+                            for point in data_points {
+                                if let (Some(upload_bytes), Some(download_bytes)) = (
+                                    point["upload_bytes"].as_u64(),
+                                    point["download_bytes"].as_u64()
+                                ) {
+                                    // DNS 流量也是增量数据
+                                    monitor.add_delta_traffic(upload_bytes, download_bytes);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let mut logs_guard = logs.lock().await;
+                    logs_guard.push(format!("❌ 第 {} 次获取流量数据失败：{}", traffic_count, e));
+                }
+            }
+            
+            traffic_interval.tick().await;
         }
     }
     
@@ -102,10 +233,12 @@ impl TurboGitHubApp {
         });
     }
     
-    fn start_service(&self) {
+    fn start_service(&mut self) {
         let service = Arc::clone(&self.service);
         let logs = Arc::clone(&self.logs);
         self.add_log("启动服务...".to_string());
+        
+        self.service_running = true;
         
         self.rt.spawn(async move {
             match service.start_service().await {
@@ -121,10 +254,12 @@ impl TurboGitHubApp {
         });
     }
     
-    fn stop_service(&self) {
+    fn stop_service(&mut self) {
         let service = Arc::clone(&self.service);
         let logs = Arc::clone(&self.logs);
         self.add_log("停止服务...".to_string());
+        
+        self.service_running = false;
         
         self.rt.spawn(async move {
             match service.stop_service().await {
@@ -158,10 +293,30 @@ impl TurboGitHubApp {
             }
         });
     }
+
+    // DNS代理功能已改为自动模式，无需手动设置
 }
 
 impl eframe::App for TurboGitHubApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 检查窗口是否应该可见
+        let should_be_visible = WINDOW_SHOULD_BE_VISIBLE.load(Ordering::SeqCst);
+        
+        // 如果窗口应该可见但当前不可见，显示它
+        if should_be_visible && !self.window_visible {
+            println!("🔵 显示窗口（从隐藏状态恢复）");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            self.window_visible = true;
+        }
+        
+        // 如果窗口应该不可见但当前可见，隐藏它
+        if !should_be_visible && self.window_visible {
+            println!("🔵 隐藏窗口到系统托盘");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.window_visible = false;
+        }
+        
         // 设置窗口大小和属性（仅在第一次运行时设置）
         if !self.window_configured {
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(900.0, 650.0)));
@@ -170,6 +325,18 @@ impl eframe::App for TurboGitHubApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
             self.window_configured = true;
+        }
+        
+        // 处理关闭请求：隐藏窗口到系统托盘，程序继续在后台运行
+        if ctx.input(|i| i.viewport().close_requested()) {
+            println!("🔵 用户点击关闭按钮");
+            // 设置窗口应该不可见
+            WINDOW_SHOULD_BE_VISIBLE.store(false, Ordering::SeqCst);
+            // 隐藏窗口
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            // 清除关闭请求，防止程序退出
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.window_visible = false;
         }
         
         // 自动刷新
@@ -269,31 +436,30 @@ impl eframe::App for TurboGitHubApp {
             
             // 流量图表区域
             ui.vertical(|ui| {
-                // 模拟流量数据（在实际应用中应从守护进程获取）
-                let now = std::time::SystemTime::now();
-                let elapsed = now.duration_since(self.app_start_time).unwrap_or_default().as_secs();
-                
-                // 基于应用运行时间生成变化的流量数据
-                let upload_bytes = ((elapsed % 60) * 1024 * 1024) / 60;
-                let download_bytes = ((elapsed % 45) * 2048 * 1024) / 45;
-                
-                self.traffic_monitor.add_traffic(upload_bytes, download_bytes);
-                
-                // 显示流量统计
-                let (total_upload, total_download) = self.traffic_monitor.get_total_traffic();
+                // 显示流量统计（使用后台任务缓存的数据）
+                let (total_upload, total_download) = self.rt.block_on(async {
+                    let monitor = self.traffic_monitor.lock().await;
+                    monitor.get_total_traffic()
+                });
                 ui.horizontal(|ui| {
                     ui.colored_label(egui::Color32::from_rgb(0, 225, 160), "●");
                     ui.label(format!("上传：{:.2} MB", total_upload as f32 / 1024.0 / 1024.0));
                     ui.separator();
                     ui.colored_label(egui::Color32::from_rgb(25, 103, 210), "●");
                     ui.label(format!("下载：{:.2} MB", total_download as f32 / 1024.0 / 1024.0));
+                    ui.separator();
+                    ui.colored_label(egui::Color32::from_rgb(255, 165, 0), "●");
+                    ui.label("实时流量监控");
                 });
                 
                 // 为图表分配固定高度的区域
                 ui.add_space(10.0);
                 
                 // 绘制流量图表
-                let data_points = self.traffic_monitor.get_all_data();
+                let data_points = self.rt.block_on(async {
+                    let monitor = self.traffic_monitor.lock().await;
+                    monitor.get_all_data()
+                });
                 
                 // 计算当前上传和下载速度 (KB/s)
                 let current_upload_speed = if data_points.len() >= 2 {
@@ -323,26 +489,29 @@ impl eframe::App for TurboGitHubApp {
             ui.heading("控制面板");
             
             ui.horizontal(|ui| {
-                // 启动服务按钮 - 绿色背景
-                let start_button = egui::Button::new(egui::RichText::new("▶ 启动服务")
-                    .size(14.0)
-                    .color(egui::Color32::WHITE))
-                    .fill(egui::Color32::from_rgb(0, 210, 127))
-                    .min_size(egui::Vec2::new(90.0, 32.0));
+                // 启动/停止服务按钮 - 根据状态动态切换
+                let toggle_button = if self.service_running {
+                    // 停止服务按钮 - 红色背景
+                    egui::Button::new(egui::RichText::new("● 停止服务")
+                        .size(14.0)
+                        .color(egui::Color32::WHITE))
+                        .fill(egui::Color32::from_rgb(250, 15, 70))
+                        .min_size(egui::Vec2::new(90.0, 32.0))
+                } else {
+                    // 启动服务按钮 - 绿色背景
+                    egui::Button::new(egui::RichText::new("▶ 启动服务")
+                        .size(14.0)
+                        .color(egui::Color32::WHITE))
+                        .fill(egui::Color32::from_rgb(0, 210, 127))
+                        .min_size(egui::Vec2::new(90.0, 32.0))
+                };
                 
-                if ui.add(start_button).clicked() {
-                    self.start_service();
-                }
-                
-                // 停止服务按钮 - 红色背景
-                let stop_button = egui::Button::new(egui::RichText::new("● 停止服务")
-                    .size(14.0)
-                    .color(egui::Color32::WHITE))
-                    .fill(egui::Color32::from_rgb(250, 15, 70))
-                    .min_size(egui::Vec2::new(90.0, 32.0));
-                
-                if ui.add(stop_button).clicked() {
-                    self.stop_service();
+                if ui.add(toggle_button).clicked() {
+                    if self.service_running {
+                        self.stop_service();
+                    } else {
+                        self.start_service();
+                    }
                 }
                 
                 // 立即扫描按钮 - 蓝色背景
@@ -358,6 +527,8 @@ impl eframe::App for TurboGitHubApp {
                 
                 ui.checkbox(&mut self.auto_refresh, "自动刷新");
             });
+            
+            // 简化界面，移除不必要的说明信息
         });
     }
 }

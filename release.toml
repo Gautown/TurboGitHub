@@ -3,7 +3,7 @@
 # 应用程序名称
 name = "TurboGitHub"
 # 版本号
-version = "1.0.0"
+version = "0.0.1"
 # 描述
 description = "GitHub加速工具 - DNS优化和流量监控"
 
@@ -35,4 +35,4 @@ exclude = ["target/", ".git/", "*.log"]
 [info]
 author = "GauTon"
 repository = "https://github.com/Gautown/TurboGitHub"
-license = "MIT"
+license = "GPL-2.0"

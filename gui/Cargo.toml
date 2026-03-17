@@ -10,7 +10,7 @@ identifier = "com.gautown.turbogithub"
 version = "0.0.1"
 authors = ["Gautown"]
 description = "GitHub网络优化加速工具"
-license = "MIT"
+license = "GPL-2.0"
 repository = "https://github.com/Gautown/TurboGitHub"
 
 # Windows特定配置
@@ -33,25 +33,30 @@ icon = ["../assets/icons/logo.icns"]
 resources = ["../assets/icons/"]
 category = "public.app-category.developer-tools"
 
-[profile.release]
-opt-level = "z"      # 最小化优化
-lto = true           # 链接时优化
-codegen-units = 1    # 减少代码生成单元
-panic = "abort"      # 使用 abort 而不是 unwind
-strip = true         # 剥离调试符号
-
-[profile.dev]
-opt-level = 0        # 开发模式不优化
-
 [dependencies]
-eframe = { version = "0.33", features = [] }  # 移除persistence特性
+eframe = { version = "0.33", features = [] }  # 移除 persistence 特性
 egui = "0.33"
 egui_extras = "0.33"  # 添加必要的依赖
-tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }  # 添加必要的特性
+tokio = { version = "1", features = ["rt", "sync", "time", "macros", "net"] }  # 添加必要的特性
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }  # 添加必要的依赖
-ico = "0.2"  # 重新添加ICO图标处理依赖
+ico = "0.2"  # ICO 图标处理依赖
+image = "0.25"  # PNG 图标处理支持
 rand = "0.8"
-tray-item = "0.10"
-system-tray = "0.3"
+# 系统托盘和线程通信依赖
+systray = "0.4"
+crossbeam-channel = "0.5.15"
+# 日志依赖
+env_logger = "0.11"
+# IPC 通信相关依赖
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+# Windows API 支持（用于系统托盘功能）
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+]}
+thiserror = "1.0"
+tracing = "0.1"

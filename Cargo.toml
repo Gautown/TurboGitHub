@@ -1,3 +1,27 @@
 [workspace]
 members = ["core", "gui"]
 resolver = "2"
+
+default-members = ["gui"]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+tracing = "0.1"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = "z"      # 最小化优化
+lto = true           # 链接时优化
+codegen-units = 1    # 减少代码生成单元
+panic = "abort"      # 使用 abort 而不是 unwind
+strip = true         # 剥离调试符号
+
+[profile.dev]
+opt-level = 0        # 开发模式不优化
