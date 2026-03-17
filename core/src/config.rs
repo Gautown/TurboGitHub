@@ -36,7 +36,7 @@ impl Default for Config {
             scan_interval: 1800,
             scan_concurrency: 50,
             upstream_dns: "223.5.5.5:53".to_string(),
-            listen_addr: "127.0.0.1:53".to_string(),
+            listen_addr: "127.0.0.1:53535".to_string(),
             log_level: "info".to_string(),
         }
     }
