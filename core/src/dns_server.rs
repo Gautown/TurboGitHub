@@ -30,18 +30,42 @@ impl DnsServer {
         })
     }
 
-    pub async fn start(&self, listen_addr: String) -> anyhow::Result<()> {
+    #[allow(dead_code)]
+    pub async fn start(&self, listen_addr: String) -> anyhow::Result<u16> {
         let socket: SocketAddr = listen_addr.parse()?;
         let udp_socket = UdpSocket::bind(socket).await?;
         
-        info!("DNS server listening on {}", socket);
-        
-        // 验证套接字绑定
+        // 获取实际绑定的端口
         let local_addr = udp_socket.local_addr()?;
+        let port = local_addr.port();
+        
+        info!("DNS server listening on {}", local_addr);
         info!("DNS server bound to: {}", local_addr);
         
-        let mut buf = [0u8; 512];
+        // 返回端口号
+        Ok(port)
+    }
+    
+    /// 启动 DNS 服务器并处理请求（内部方法）
+    #[allow(dead_code)]
+    pub async fn start_with_handler(&self, listen_addr: String) -> anyhow::Result<()> {
+        let socket: SocketAddr = listen_addr.parse()?;
+        let udp_socket = UdpSocket::bind(socket).await?;
         
+        info!("DNS server listening on {}", udp_socket.local_addr()?);
+        
+        self.run_server(udp_socket).await
+    }
+    
+    /// 从现有 socket 启动 DNS 服务器（用于动态端口）
+    pub async fn start_with_handler_from_socket(&self, udp_socket: UdpSocket) -> anyhow::Result<()> {
+        info!("DNS server listening on {}", udp_socket.local_addr()?);
+        self.run_server(udp_socket).await
+    }
+    
+    /// 运行 DNS 服务器主循环
+    async fn run_server(&self, udp_socket: UdpSocket) -> anyhow::Result<()> {
+        let mut buf = [0u8; 512];
         let udp_socket = Arc::new(udp_socket);
         
         info!("DNS server ready to receive queries...");
@@ -112,7 +136,7 @@ impl DnsServer {
         
         debug!("Received DNS query for: {}", domain);
         
-        // GitHub核心域名列表
+        // GitHub 核心域名列表
         let github_domains = vec![
             "github.com",
             "api.github.com", 
@@ -125,23 +149,47 @@ impl DnsServer {
             "assets-cdn.github.com"
         ];
         
-        let is_github_domain = github_domains.iter().any(|d| domain.ends_with(d));
+        // AO3 (Archive of Our Own) 域名列表
+        let ao3_domains = vec![
+            "archiveofourown.org",
+            "archiveofourown.com",
+        ];
         
-        // 如果是GitHub域名，记录日志
+        // Pixiv 域名列表
+        let pixiv_domains = vec![
+            "pixiv.net",
+            "www.pixiv.net",
+            "dic.pixiv.net",
+            "fanbox.cc",
+            "www.fanbox.cc",
+        ];
+        
+        let is_github_domain = github_domains.iter().any(|d| domain.ends_with(d));
+        let is_ao3_domain = ao3_domains.iter().any(|d| domain.ends_with(d));
+        let is_pixiv_domain = pixiv_domains.iter().any(|d| domain.ends_with(d));
+        
+        // 如果是 GitHub 域名，记录日志
         if is_github_domain {
             info!("Detected GitHub domain: {}", domain);
-            
-            // 简化实现：只记录检测到的GitHub域名
             debug!("GitHub domain {} detected", domain);
         }
         
+        // 如果是 AO3 域名，记录日志
+        if is_ao3_domain {
+            info!("Detected AO3 domain: {}", domain);
+            debug!("AO3 domain {} detected", domain);
+        }
+        
+        // 如果是 Pixiv 域名，记录日志
+        if is_pixiv_domain {
+            info!("Detected Pixiv domain: {}", domain);
+            debug!("Pixiv domain {} detected", domain);
+        }
+        
         // Check if this is a domain we should accelerate
-        let accelerated_domains = vec![
-            "github.com",
-            "api.github.com", 
-            "raw.githubusercontent.com",
-            "assets-cdn.github.com"
-        ];
+        let mut accelerated_domains = github_domains.clone();
+        accelerated_domains.extend_from_slice(&ao3_domains);
+        accelerated_domains.extend_from_slice(&pixiv_domains);
         
         let should_accelerate = accelerated_domains.iter().any(|d| domain.ends_with(d));
         

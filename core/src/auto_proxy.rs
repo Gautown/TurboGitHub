@@ -85,8 +85,8 @@ impl AutoProxyConfig {
         info!("🔒 保持HTTP代理设置不变，避免影响IE和其他应用程序");
         
         info!("🎯 TurboGitHub智能代理设置完成！");
-        info!("💡 GitHub流量通过DNS加速，IE代理设置不受影响");
-        info!("📋 支持的GitHub域名：github.com, api.github.com, raw.githubusercontent.com等");
+        info!("💡 GitHub/AO3/Pixiv流量通过DNS加速，IE代理设置不受影响");
+        info!("📋 支持的域名：github.com, api.github.com, archiveofourown.org, pixiv.net等");
         
         Ok(())
     }

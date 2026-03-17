@@ -134,6 +134,7 @@ impl SystemTrayManager {
     }
 
     /// 启动事件监听器（返回事件接收器）
+    #[allow(dead_code)]
     pub fn start_event_listener(&self) -> Receiver<TrayEvent> {
         self.event_rx.clone()
     }

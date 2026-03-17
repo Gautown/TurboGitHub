@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use crossbeam_channel::Receiver;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::process::{Command, Stdio};
@@ -303,14 +302,12 @@ fn load_ico_icon(path: &str) -> Result<egui::IconData, Box<dyn std::error::Error
 
 /// 加载 PNG 图标
 fn load_png_icon(path: &str) -> Result<egui::IconData, Box<dyn std::error::Error>> {
-    use image::GenericImageView;
-    
-    println!("🔍 开始加载 PNG 图标: {}", path);
+    println!("🔍 开始加载 PNG 图标：{}", path);
     
     let img = image::open(path)?;
     let rgba = img.to_rgba8();
     
-    println!("🎯 目标尺寸: {}x{} 像素", rgba.width(), rgba.height());
+    println!("🎯 目标尺寸：{}x{} 像素", rgba.width(), rgba.height());
     
     Ok(egui::IconData {
         rgba: rgba.to_vec(),

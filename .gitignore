@@ -10,6 +10,7 @@ Cargo.lock
 
 # 日志文件
 *.log
+*.pac
 
 # 系统文件
 .DS_Store
@@ -17,6 +18,8 @@ Thumbs.db
 
 # 临时文件
 .ipc_port
+.dns_port
+.http_port
 *.tmp
 *.temp
 

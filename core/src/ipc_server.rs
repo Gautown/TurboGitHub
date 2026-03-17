@@ -1,6 +1,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::{TcpListener, TcpStream};
@@ -72,21 +73,32 @@ impl IpcServer {
     }
 
     /// 自动启动服务（应用程序启动时调用）
-    pub async fn auto_start_service(&self) -> anyhow::Result<()> {
-        info!("🚀 Auto-starting service...");
+    /// 返回 (DNS 端口，HTTP 代理端口)
+    pub async fn auto_start_service(&self) -> anyhow::Result<(u16, u16)> {
+        info!("🚀 Auto-starting service with dynamic ports...");
         
         // 检查是否已经在运行
         if self.dns_running.load(Ordering::SeqCst) {
             info!("Service is already running");
-            return Ok(());
+            // 服务已在运行时，返回 0 表示使用已分配的动态端口
+            return Ok((0, 0));
         }
         
         // 调用启动逻辑
         match Self::handle_start(json!({}), self).await {
-            Ok(result) => {
+            Ok((result, dns_port, http_port)) => {
                 info!("✅ Auto-start completed: {:?}", result);
+                info!("💡 DNS server listening on 127.0.0.1:{} (dynamic port)", dns_port);
+                info!("💡 HTTP proxy listening on 127.0.0.1:{} (dynamic port)", http_port);
                 
-                // 自动设置系统代理（无需用户手动配置）
+                // 保存动态端口信息到文件，供 GUI 读取
+                if let Err(e) = Self::save_dynamic_ports(dns_port, http_port) {
+                    error!("❌ Failed to save dynamic ports: {}", e);
+                } else {
+                    info!("✅ Dynamic ports saved: DNS={}, HTTP={}", dns_port, http_port);
+                }
+                
+                // 自动设置系统代理（使用 PAC 文件，无需用户手动配置）
                 info!("🔧 Auto-configuring system proxy...");
                 if let Err(e) = self.setup_system_proxy() {
                     error!("❌ Failed to setup system proxy: {}", e);
@@ -96,13 +108,30 @@ impl IpcServer {
                     info!("💡 GitHub acceleration is now active automatically!");
                 }
                 
-                Ok(())
+                Ok((dns_port, http_port))
             }
             Err(e) => {
                 error!("❌ Auto-start failed: {}", e);
                 Err(e)
             }
         }
+    }
+
+    /// 保存动态端口信息到文件
+    fn save_dynamic_ports(dns_port: u16, http_port: u16) -> anyhow::Result<()> {
+        use std::fs;
+        
+        // 保存 DNS 端口
+        let dns_port_file = Path::new(".dns_port");
+        fs::write(dns_port_file, dns_port.to_string())?;
+        info!("💾 DNS port saved to: {:?}", dns_port_file);
+        
+        // 保存 HTTP 代理端口
+        let http_port_file = Path::new(".http_port");
+        fs::write(http_port_file, http_port.to_string())?;
+        info!("💾 HTTP port saved to: {:?}", http_port_file);
+        
+        Ok(())
     }
 
     /// 设置系统代理（使用 PAC 文件）
@@ -267,7 +296,10 @@ impl IpcServer {
         let params = request["params"].clone();
         
         let result = match method {
-            "start" => Self::handle_start(params, ipc_server).await?,
+            "start" => {
+                let (value, _, _) = Self::handle_start(params, ipc_server).await?;
+                value
+            },
             "stop" => Self::handle_stop(params, ipc_server).await?,
             "get_status" => Self::handle_get_status(params, scanner, ipc_server).await?,
             "get_config" => Self::handle_get_config(params, config).await?,
@@ -290,16 +322,17 @@ impl IpcServer {
         Ok(response.to_string())
     }
 
-    async fn handle_start(_params: Value, ipc_server: &IpcServer) -> anyhow::Result<Value> {
+    async fn handle_start(_params: Value, ipc_server: &IpcServer) -> anyhow::Result<(Value, u16, u16)> {
         info!("Received start command");
         
         // 检查服务是否已经在运行
         if ipc_server.dns_running.load(Ordering::SeqCst) {
             info!("Service is already running");
-            return Ok(json!({ "success": true, "message": "Service is already running" }));
+            return Ok((json!({ "success": true, "message": "Service is already running" }), 53535, 7890));
         }
         
-        // 创建 DNS 服务器实例
+        // 使用动态端口绑定 DNS 服务器
+        let dns_listen_addr = "127.0.0.1:0".to_string();
         let dns_server = DnsServer::new(
             Arc::clone(&ipc_server.scanner),
             ipc_server.config.listen_addr.clone(),
@@ -307,37 +340,49 @@ impl IpcServer {
             Arc::clone(&ipc_server.github_traffic_monitor),
         )?;
         
-        // 创建 HTTP 代理服务器实例
+        // 创建 HTTP 代理服务器实例（使用动态端口）
         let http_proxy = HttpProxy::new(
             Arc::clone(&ipc_server.scanner),
             Arc::clone(&ipc_server.traffic_stats),
         );
         
         // 克隆需要的数据
-        let listen_addr = ipc_server.config.listen_addr.clone();
         let dns_server_arc = Arc::new(dns_server);
-        let dns_server_clone = Arc::clone(&dns_server_arc);
         let http_proxy_arc = Arc::new(http_proxy);
-        let http_proxy_clone = Arc::clone(&http_proxy_arc);
         let _dns_running = Arc::clone(&ipc_server.dns_running);
         
-        // 启动 DNS 服务器
+        // 启动 DNS 服务器（使用动态端口）
+        let dns_server_for_binding = Arc::clone(&dns_server_arc);
+        let dns_listen_addr_clone = dns_listen_addr.clone();
+        
+        // 先绑定 DNS 服务器获取端口
+        let dns_socket = tokio::net::UdpSocket::bind(dns_listen_addr_clone).await?;
+        let dns_local_addr = dns_socket.local_addr()?;
+        let dns_port = dns_local_addr.port();
+        info!("✅ DNS server bound to 127.0.0.1:{} (dynamic port)", dns_port);
+        
+        // 在后台运行 DNS 服务器
         let dns_handle = tokio::spawn(async move {
-            info!("🚀 Starting DNS server...");
-            if let Err(e) = dns_server_clone.start(listen_addr).await {
+            info!("🚀 Starting DNS server background task...");
+            if let Err(e) = dns_server_for_binding.start_with_handler_from_socket(dns_socket).await {
                 error!("❌ DNS server error: {}", e);
-            } else {
-                info!("✅ DNS server exited normally");
             }
         });
         
-        // 启动 HTTP 代理服务器（端口 7890）
+        // 启动 HTTP 代理服务器（使用动态端口）
+        let http_proxy_for_binding = Arc::clone(&http_proxy_arc);
+        
+        // 先绑定 HTTP 代理获取端口
+        let http_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let http_local_addr = http_socket.local_addr()?;
+        let http_port = http_local_addr.port();
+        info!("✅ HTTP proxy bound to 127.0.0.1:{} (dynamic port)", http_port);
+        
+        // 在后台运行 HTTP 代理
         let _proxy_handle = tokio::spawn(async move {
-            info!("🚀 Starting HTTP proxy server on 127.0.0.1:7890...");
-            if let Err(e) = http_proxy_clone.start("127.0.0.1:7890".to_string()).await {
+            info!("🚀 Starting HTTP proxy background task...");
+            if let Err(e) = http_proxy_for_binding.start_from_socket(http_socket).await {
                 error!("❌ HTTP proxy error: {}", e);
-            } else {
-                info!("✅ HTTP proxy exited normally");
             }
         });
         
@@ -350,8 +395,8 @@ impl IpcServer {
         // 设置运行状态
         ipc_server.dns_running.store(true, Ordering::SeqCst);
         
-        // 创建 PAC 文件（不需要管理员权限）
-        let pac_proxy = crate::pac_proxy::PacProxy::new("127.0.0.1:7890".to_string());
+        // 创建 PAC 文件（使用动态 HTTP 端口）
+        let pac_proxy = crate::pac_proxy::PacProxy::new(format!("127.0.0.1:{}", http_port));
         if let Err(e) = pac_proxy.create_pac_file() {
             error!("Failed to create PAC file: {}", e);
         } else {
@@ -361,7 +406,8 @@ impl IpcServer {
         }
         
         info!("✅ Service started successfully (DNS + HTTP Proxy + PAC)");
-        Ok(json!({ "success": true, "message": "Service started" }))
+        info!("💡 DNS port: {}, HTTP port: {}", dns_port, http_port);
+        Ok((json!({ "success": true, "message": "Service started" }), dns_port, http_port))
     }
 
     async fn handle_stop(_params: Value, ipc_server: &IpcServer) -> anyhow::Result<Value> {

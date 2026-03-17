@@ -15,6 +15,13 @@ domains = [
     "pages.github.com",
     "status.github.com",
     "support.github.com",
+    "archiveofourown.org",
+    "archiveofourown.com",
+    "pixiv.net",
+    "www.pixiv.net",
+    "dic.pixiv.net",
+    "fanbox.cc",
+    "www.fanbox.cc",
 ]
 scan_interval = 1800
 scan_concurrency = 50

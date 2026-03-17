@@ -22,12 +22,24 @@ impl HttpProxy {
     }
     
     /// 启动 HTTP 代理服务器
+    #[allow(dead_code)]
     pub async fn start(&self, listen_addr: String) -> anyhow::Result<()> {
         let socket: SocketAddr = listen_addr.parse()?;
         let listener = TcpListener::bind(socket).await?;
         
-        info!("🌐 HTTP proxy server listening on {}", socket);
+        info!("🌐 HTTP proxy server listening on {}", listener.local_addr()?);
         
+        self.run_server(listener).await
+    }
+    
+    /// 从现有 socket 启动 HTTP 代理（用于动态端口）
+    pub async fn start_from_socket(&self, listener: TcpListener) -> anyhow::Result<()> {
+        info!("🌐 HTTP proxy server listening on {}", listener.local_addr()?);
+        self.run_server(listener).await
+    }
+    
+    /// 运行 HTTP 代理服务器主循环
+    async fn run_server(&self, listener: TcpListener) -> anyhow::Result<()> {
         let mut buf = [0u8; 8192];
         
         loop {
@@ -76,9 +88,9 @@ impl HttpProxy {
         
         debug!("Proxy request: {} -> {}:{}", method, host, port);
         
-        // 检查是否是 GitHub 域名
-        if Self::is_github_domain(&host) {
-            info!("🎯 GitHub domain detected: {}", host);
+        // 检查是否是目标域名（GitHub/AO3/Pixiv）
+        if Self::is_target_domain(&host) {
+            info!("🎯 Target domain detected: {}", host);
             
             // 尝试获取最佳 IP
             if let Some(best_ip) = scanner.get_best_ip(&host).await {
@@ -173,7 +185,8 @@ impl HttpProxy {
         }
     }
     
-    fn is_github_domain(host: &str) -> bool {
+    fn is_target_domain(host: &str) -> bool {
+        // GitHub 域名列表
         let github_domains = vec![
             "github.com",
             "www.github.com",
@@ -189,6 +202,27 @@ impl HttpProxy {
             "camo.githubusercontent.com",
         ];
         
-        github_domains.iter().any(|d| host.ends_with(d))
+        // AO3 (Archive of Our Own) 域名列表
+        let ao3_domains = vec![
+            "archiveofourown.org",
+            "archiveofourown.com",
+            "www.archiveofourown.org",
+            "www.archiveofourown.com",
+        ];
+        
+        // Pixiv 域名列表
+        let pixiv_domains = vec![
+            "pixiv.net",
+            "www.pixiv.net",
+            "dic.pixiv.net",
+            "fanbox.cc",
+            "www.fanbox.cc",
+        ];
+        
+        let mut all_domains = github_domains.clone();
+        all_domains.extend_from_slice(&ao3_domains);
+        all_domains.extend_from_slice(&pixiv_domains);
+        
+        all_domains.iter().any(|d| host.ends_with(d))
     }
 }

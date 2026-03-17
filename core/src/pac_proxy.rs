@@ -47,9 +47,29 @@ function FindProxyForURL(url, host) {{
         "vscode-auth.github.com"
     ];
     
+    // AO3 (Archive of Our Own) 相关域名列表
+    var ao3Domains = [
+        "archiveofourown.org",
+        "www.archiveofourown.org",
+        "archiveofourown.com",
+        "www.archiveofourown.com"
+    ];
+    
+    // Pixiv 相关域名列表
+    var pixivDomains = [
+        "pixiv.net",
+        "www.pixiv.net",
+        "dic.pixiv.net",
+        "fanbox.cc",
+        "www.fanbox.cc"
+    ];
+    
+    // 合并所有域名列表
+    var allDomains = githubDomains.concat(ao3Domains).concat(pixivDomains);
+    
     // 检查域名是否匹配
-    for (var i = 0; i < githubDomains.length; i++) {{
-        if (dnsDomainIs(host, "." + githubDomains[i])) {{
+    for (var i = 0; i < allDomains.length; i++) {{
+        if (dnsDomainIs(host, "." + allDomains[i])) {{
             return "SOCKS5 {proxy}; SOCKS {proxy}; PROXY {proxy}; DIRECT";
         }}
     }}

@@ -60,44 +60,75 @@ impl IntegratedService {
 
     /// 读取动态 IPC 端口文件（FastGithub 风格：统一路径）
     fn read_dynamic_ipc_port() -> Result<u16, String> {
-        // FastGithub 风格：在项目根目录查找 IPC 端口文件
-        let port_files = [
-            Path::new(".ipc_port"),                    // 当前目录
-            Path::new("../.ipc_port"),                // 上级目录（项目根目录）
-            Path::new("../../.ipc_port"),             // 上上级目录
-            Path::new("core/.ipc_port"),              // core 目录下的端口文件（从根目录）
-            Path::new("../core/.ipc_port"),           // core 目录下的端口文件
-            Path::new("../../core/.ipc_port"),       // 上上级 core 目录下的端口文件
-        ];
-        
-        eprintln!("🔍 Searching for IPC port file...");
-        
-        let mut found_port: Option<u16> = None;
-        
-        for port_file in &port_files {
-            if port_file.exists() {
-                match fs::read_to_string(port_file) {
-                    Ok(content) => {
-                        if let Ok(port) = content.trim().parse::<u16>() {
-                            found_port = Some(port);
-                            eprintln!("✅ Found IPC port file: {:?} -> port {}", port_file, port);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("⚠️ Failed to read IPC port file {:?}: {}", port_file, e);
-                    }
+        Self::read_dynamic_port_from_file(".ipc_port", 13626)
+    }
+
+    /// 读取动态 DNS 端口文件
+    #[allow(dead_code)]
+    pub fn read_dynamic_dns_port() -> Result<u16, String> {
+        Self::read_dynamic_port_from_file(".dns_port", 53535)
+    }
+
+    /// 读取动态 HTTP 代理端口文件
+    #[allow(dead_code)]
+    pub fn read_dynamic_http_port() -> Result<u16, String> {
+        Self::read_dynamic_port_from_file(".http_port", 7890)
+    }
+
+    /// 通用方法：从文件读取动态端口
+    fn read_dynamic_port_from_file(port_file_name: &str, default_port: u16) -> Result<u16, String> {
+        // 尝试从当前目录读取
+        let port_file = Path::new(port_file_name);
+        if port_file.exists() {
+            if let Ok(content) = fs::read_to_string(port_file) {
+                if let Ok(port) = content.trim().parse::<u16>() {
+                    eprintln!("✅ Found {} port file: {:?} -> port {}", 
+                        if port_file_name == ".ipc_port" { "IPC" }
+                        else if port_file_name == ".dns_port" { "DNS" }
+                        else { "HTTP" },
+                        port_file, port);
+                    return Ok(port);
                 }
             }
         }
         
-        if let Some(port) = found_port {
-            Ok(port)
-        } else {
-            eprintln!("⚠️ IPC port file not found, using default port 13626");
-            eprintln!("💡 Make sure TurboGitHub Core is running!");
-            Err("IPC port file not found. Please ensure TurboGitHub Core is running.".to_string())
+        // 尝试从上级目录读取
+        let port_file = Path::new("../").join(port_file_name);
+        if port_file.exists() {
+            if let Ok(content) = fs::read_to_string(&port_file) {
+                if let Ok(port) = content.trim().parse::<u16>() {
+                    eprintln!("✅ Found {} port file: {:?} -> port {}", 
+                        if port_file_name == ".ipc_port" { "IPC" }
+                        else if port_file_name == ".dns_port" { "DNS" }
+                        else { "HTTP" },
+                        port_file, port);
+                    return Ok(port);
+                }
+            }
         }
+        
+        // 尝试从 core 目录读取
+        let port_file = Path::new("core/").join(port_file_name);
+        if port_file.exists() {
+            if let Ok(content) = fs::read_to_string(&port_file) {
+                if let Ok(port) = content.trim().parse::<u16>() {
+                    eprintln!("✅ Found {} port file: {:?} -> port {}", 
+                        if port_file_name == ".ipc_port" { "IPC" }
+                        else if port_file_name == ".dns_port" { "DNS" }
+                        else { "HTTP" },
+                        port_file, port);
+                    return Ok(port);
+                }
+            }
+        }
+        
+        eprintln!("⚠️ {} port file not found, using default port {}", 
+            if port_file_name == ".ipc_port" { "IPC" }
+            else if port_file_name == ".dns_port" { "DNS" }
+            else { "HTTP" },
+            default_port);
+        eprintln!("💡 Make sure TurboGitHub Core is running!");
+        Ok(default_port)
     }
 
     /// 连接到 IPC 服务器

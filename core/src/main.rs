@@ -105,11 +105,20 @@ async fn main() -> anyhow::Result<()> {
         }
     });
     
-    // 自动启动服务（DNS + HTTP 代理 + PAC）
-    info!("🚀 Auto-starting service on application launch...");
+    // 自动启动服务（DNS + HTTP 代理 + PAC，使用动态端口）
+    info!("🚀 Auto-starting service with dynamic ports...");
     let auto_start_result = ipc_server.auto_start_service().await;
     match auto_start_result {
-        Ok(_) => info!("✅ Service auto-started successfully"),
+        Ok((dns_port, http_port)) => {
+            info!("✅ Service auto-started successfully");
+            if dns_port > 0 {
+                info!("💡 DNS server listening on 127.0.0.1:{} (dynamic port)", dns_port);
+            }
+            if http_port > 0 {
+                info!("💡 HTTP proxy listening on 127.0.0.1:{} (dynamic port)", http_port);
+            }
+            info!("💡 Dynamic ports prevent conflicts with other applications");
+        }
         Err(e) => error!("❌ Service auto-start failed: {}", e),
     }
     
