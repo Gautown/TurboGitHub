@@ -305,9 +305,17 @@ impl eframe::App for TurboGitHubApp {
         // 如果窗口应该可见但当前不可见，显示它
         if should_be_visible && !self.window_visible {
             println!("🔵 显示窗口（从隐藏状态恢复）");
+            // 确保窗口可见
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            // 提升窗口到前台
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            // 恢复窗口大小（如果最小化）
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(900.0, 650.0)));
+            // 取消最小化
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
             self.window_visible = true;
+            // 强制重绘
+            ctx.request_repaint();
         }
         
         // 如果窗口应该不可见但当前可见，隐藏它

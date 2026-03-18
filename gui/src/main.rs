@@ -128,8 +128,16 @@ fn main() -> Result<(), eframe::Error> {
                             app::WINDOW_SHOULD_BE_VISIBLE.store(true, Ordering::SeqCst);
                             // 发送显示窗口命令
                             if let Some(ctx) = ctx_clone_for_thread.lock().unwrap().as_ref() {
+                                // 先确保窗口可见
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                                // 提升窗口到前台
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                                // 恢复窗口（如果最小化）
+                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(900.0, 650.0)));
+                                // 强制重绘
+                                ctx.request_repaint();
+                                // 再次请求重绘确保刷新
+                                std::thread::sleep(std::time::Duration::from_millis(50));
                                 ctx.request_repaint();
                                 println!("✅ 已发送显示窗口命令");
                             } else {
