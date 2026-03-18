@@ -101,8 +101,15 @@ impl HttpProxy {
                     Ok(mut remote_stream) => {
                         info!("✅ Connected to optimized IP");
                         
-                        // 转发请求
-                        remote_stream.write_all(&buf[..n]).await?;
+                        // 如果是 CONNECT 请求，先发送 200 响应
+                        if method == "CONNECT" {
+                            let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+                            stream.write_all(response).await?;
+                            debug!("Sent CONNECT 200 response");
+                        } else {
+                            // 转发普通 HTTP 请求
+                            remote_stream.write_all(&buf[..n]).await?;
+                        }
                         
                         // 双向转发数据
                         let (mut read_half, mut write_half) = stream.split();
@@ -143,7 +150,15 @@ impl HttpProxy {
         debug!("Connecting to original host: {}:{}", host, port);
         match TcpStream::connect(format!("{}:{}", host, port)).await {
             Ok(mut remote_stream) => {
-                remote_stream.write_all(&buf[..n]).await?;
+                // 如果是 CONNECT 请求，先发送 200 响应
+                if method == "CONNECT" {
+                    let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+                    stream.write_all(response).await?;
+                    debug!("Sent CONNECT 200 response (direct connection)");
+                } else {
+                    // 转发普通 HTTP 请求
+                    remote_stream.write_all(&buf[..n]).await?;
+                }
                 
                 let (mut read_half, mut write_half) = stream.split();
                 let (mut remote_read, mut remote_write) = remote_stream.split();

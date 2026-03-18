@@ -1,0 +1,36 @@
+# Cargo 国内镜像配置
+# 使用方法：将此文件复制到 ~/.cargo/config.toml
+
+# 使用中科大镜像源（推荐）
+[source.crates-io]
+replace-with = 'ustc'
+
+[source.ustc]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+
+# 清华镜像源（备选）
+# 如果中科大源不可用，可以取消下面的注释
+# [source.tuna]
+# registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+
+# 网络优化配置
+[net]
+git-fetch-with-cli = true
+retry = 2
+
+# HTTP 超时设置（秒）
+http.timeout = 30
+
+# 并行编译配置
+[build]
+# 使用所有 CPU 核心进行编译
+# jobs = 4  # 或者指定核心数
+
+# 目标平台配置
+[target.x86_64-pc-windows-msvc]
+# Windows MSVC 特定配置
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-unknown-linux-gnu]
+# Linux 特定配置
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
