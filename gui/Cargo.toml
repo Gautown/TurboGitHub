@@ -1,15 +1,16 @@
 [package]
 name = "turbogithub-gui"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
+rust-version = "1.94"
 
 # 打包配置
 [package.metadata.bundle]
 name = "TurboGitHub"
 identifier = "com.gautown.turbogithub"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Gautown"]
-description = "GitHub网络优化加速工具"
+description = "GitHub 网络优化加速工具"
 license = "GPL-2.0"
 repository = "https://github.com/Gautown/TurboGitHub"
 
