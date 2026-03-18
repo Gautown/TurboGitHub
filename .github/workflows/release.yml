@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如：v0.0.1)'
+        required: true
+        default: 'v0.0.1'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 安装 Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-msvc
+    
+    - name: 安装 Rust 组件
+      run: |
+        rustup component add rustfmt clippy
+    
+    - name: 缓存 Cargo 依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: 代码格式化检查
+      run: cargo fmt --check
+    
+    - name: 代码检查
+      run: cargo clippy -- -D warnings
+    
+    - name: 运行测试
+      run: cargo test --verbose
+    
+    - name: 构建 Release 版本
+      run: cargo build --release --verbose
+    
+    - name: 检查构建产物
+      run: |
+        dir target\release\turbogithub-gui.exe
+        $size = (Get-Item target\release\turbogithub-gui.exe).Length
+        Write-Host "可执行文件大小：$([math]::Round($size / 1MB, 2)) MB"
+    
+    - name: 创建发布目录
+      run: |
+        $version = "${{ github.event.inputs.version }}" -replace 'v', ''
+        if (-not $version) {
+          $version = "${{ github.ref_name }}" -replace 'v', ''
+        }
+        $outputDir = "release\TurboGitHub-$version"
+        
+        New-Item -ItemType Directory -Path "$outputDir\assets\icons" -Force
+        New-Item -ItemType Directory -Path "$outputDir\assets\images" -Force
+        
+        Copy-Item "target\release\turbogithub-gui.exe" "$outputDir\"
+        Copy-Item "config.toml" "$outputDir\"
+        Copy-Item "core\config.toml" "$outputDir\core\" -ErrorAction SilentlyContinue
+        Copy-Item "启动 TurboGitHub.bat" "$outputDir\"
+        Copy-Item "README.md" "$outputDir\"
+        Copy-Item "LICENSE" "$outputDir\"
+        Copy-Item "assets\icons\*" "$outputDir\assets\icons\" -Recurse
+        Copy-Item "assets\images\*" "$outputDir\assets\images\" -Recurse
+        
+        # 创建版本信息文件
+        @"
+        TurboGitHub v$version
+        
+        构建时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        Rust 版本：$(rustc --version)
+        Cargo 版本：$(cargo --version)
+        构建环境：GitHub Actions (${{ runner.os }})
+        
+        文件列表:
+        $(Get-ChildItem "$outputDir" -File | Select-Object -ExpandProperty Name)
+        "@ | Out-File -FilePath "$outputDir\version.txt" -Encoding UTF8
+    
+    - name: 安装 7-Zip
+      run: |
+        choco install 7zip -y
+    
+    - name: 创建压缩包
+      run: |
+        $version = "${{ github.event.inputs.version }}" -replace 'v', ''
+        if (-not $version) {
+          $version = "${{ github.ref_name }}" -replace 'v', ''
+        }
+        
+        Set-Location release
+        & "C:\Program Files\7-Zip\7z.exe" a -t7z -mmt=on -mx=9 "../TurboGitHub-$version-portable-windows-x64.7z" "TurboGitHub-$version"
+        & "C:\Program Files\7-Zip\7z.exe" a -tzip -mmt=on -mx=9 "../TurboGitHub-$version-portable-windows-x64.zip" "TurboGitHub-$version"
+        Set-Location ..
+    
+    - name: 创建 SHA256 校验和
+      run: |
+        $version = "${{ github.event.inputs.version }}" -replace 'v', ''
+        if (-not $version) {
+          $version = "${{ github.ref_name }}" -replace 'v', ''
+        }
+        
+        Get-FileHash "TurboGitHub-$version-portable-windows-x64.7z" -Algorithm SHA256 | Select-Object -ExpandProperty Hash | Out-File -FilePath "TurboGitHub-$version-portable-windows-x64.7z.sha256"
+        Get-FileHash "TurboGitHub-$version-portable-windows-x64.zip" -Algorithm SHA256 | Select-Object -ExpandProperty Hash | Out-File -FilePath "TurboGitHub-$version-portable-windows-x64.zip.sha256"
+    
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: TurboGitHub-windows-x64
+        path: |
+          TurboGitHub-*-portable-windows-x64.7z
+          TurboGitHub-*-portable-windows-x64.zip
+          TurboGitHub-*-portable-windows-x64.7z.sha256
+          TurboGitHub-*-portable-windows-x64.zip.sha256
+        retention-days: 30
+    
+    - name: 创建 GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          TurboGitHub-*-portable-windows-x64.7z
+          TurboGitHub-*-portable-windows-x64.zip
+          TurboGitHub-*-portable-windows-x64.7z.sha256
+          TurboGitHub-*-portable-windows-x64.zip.sha256
+        body: |
+          ## TurboGitHub ${{ github.ref_name }}
+          
+          ### 🎉 更新内容
+          - 自动构建发布
+          
+          ### 📦 安装包
+          - TurboGitHub-${{ github.ref_name }}-portable-windows-x64.7z (推荐)
+          - TurboGitHub-${{ github.ref_name }}-portable-windows-x64.zip
+          
+          ### 🔐 SHA256 校验和
+          详见 .sha256 文件
+          
+          ### 📋 系统要求
+          - Windows 10 或更高版本
+          - 64 位处理器
+          - 100MB 可用磁盘空间
+          
+          ### 📝 使用说明
+          1. 下载并解压压缩包
+          2. 运行 turbogithub-gui.exe
+          3. 或使用 启动 TurboGitHub.bat
+          
+          ### 🔗 链接
+          - [GitHub 项目](https://github.com/Gautown/TurboGitHub)
+          - [问题反馈](https://github.com/Gautown/TurboGitHub/issues)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  
+  notify:
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 发布完成通知
+      run: |
+        echo "======================================"
+        echo "  发布完成！"
+        echo "======================================"
+        echo ""
+        echo "版本：${{ github.event.inputs.version || github.ref_name }}"
+        echo "时间：$(date -u)"
+        echo ""
+        echo "下载链接："
+        echo "https://github.com/${{ github.repository }}/releases"
+        echo ""
